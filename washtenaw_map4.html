@@ -1,0 +1,1970 @@
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/esri-leaflet@3/dist/esri-leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<style>
+  #WashtenawMap { width: 100%; height: 100vh; }
+
+  .isd-label {
+    background: rgba(255,255,255,.8); border: 1px solid rgba(0,0,0,.25); border-radius: 3px;
+    padding: 2px 5px; font-size: 10px; font-weight: bold; color: #111;
+    white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,.15);
+  }
+  .isd-label::before { display: none; }
+
+  /* Facility markers: round pin = health care, badge = law enforcement */
+  .hcu-icon, .le-icon { background: none; border: none; }
+  .hcu-pin, .le-badge {
+    display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45);
+  }
+  .hcu-pin { width: 18px; height: 18px; border-radius: 50%; background: var(--c, #0f8a8a); }
+  .le-badge { width: 18px; height: 20px; border-radius: 3px 3px 7px 7px; background: var(--c, #1b3a6b); }
+  .hcu-pin:hover, .le-badge:hover { transform: scale(1.15); }
+
+  /* Popup card */
+  .school-popup { font: 13px/1.45 "Avenir Next", "Segoe UI", sans-serif; color: #323232; }
+  .school-popup h3 { margin: 0 0 8px; font-size: 15px; color: #00619b; }
+  .school-popup h4 { margin: 10px 0 4px; font-size: 13px; border-bottom: 2px solid #e0e0e0; padding-bottom: 3px; }
+  .school-popup a { color: #00619b; }
+  .school-popup .sp-block { margin: 6px 0; white-space: pre-line; }
+  .school-popup .sp-loading { color: #888; font-style: italic; }
+  .school-popup table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  .school-popup td { padding: 4px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .school-popup td:first-child { background: #f3f3f3; font-weight: 600; width: 38%; }
+
+  /* Search widget */
+  .map-search {
+    background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.2); border-radius: 4px;
+    padding: 6px; font: 12px/1.4 "Avenir Next","Segoe UI",sans-serif; color: #222;
+    box-shadow: 0 1px 5px rgba(0,0,0,.3); width: min(270px, calc(100vw - 20px)); box-sizing: border-box;
+  }
+  .map-search .ms-box { display: flex; align-items: center; gap: 6px; }
+  .map-search input.ms-input {
+    flex: 1 1 auto; min-width: 0; border: 1px solid rgba(0,0,0,.25); border-radius: 3px;
+    padding: 6px 8px; font: inherit; color: #222; outline: none; background: #fff;
+  }
+  .map-search input.ms-input:focus { border-color: #00619b; }
+  .map-search .ms-clear {
+    border: none; background: none; cursor: pointer; color: #888; font-size: 17px;
+    line-height: 1; padding: 2px 5px; flex: 0 0 auto;
+  }
+  .map-search .ms-clear:hover { color: #333; }
+  .map-search .ms-results {
+    display: none; margin-top: 6px; max-height: 55vh; overflow-y: auto; overscroll-behavior: contain;
+    border-top: 1px solid #e0e0e0; padding-top: 4px;
+  }
+  .map-search .ms-results.open { display: block; }
+  .map-search h6 { margin: 6px 0 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #00619b; }
+  .map-search h6:first-child { margin-top: 0; }
+  .map-search .ms-row {
+    display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; background: none;
+    border: 0; font: inherit; color: #222; cursor: pointer; padding: 4px 3px; border-radius: 3px;
+  }
+  .map-search .ms-row:hover { background: rgba(0,97,155,.08); }
+  .map-search .ms-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .map-search .ms-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .map-search .ms-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: #888; }
+  .map-search .ms-empty { color: #888; font-style: italic; padding: 4px 3px; }
+
+  /* ---- Directions widget ---------------------------------------------- */
+  .dw-launch {
+    background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.2); border-radius: 4px;
+    box-shadow: 0 1px 5px rgba(0,0,0,.3); font: 12px/1.4 "Avenir Next","Segoe UI",sans-serif;
+    color: #00619b; font-weight: 600; cursor: pointer; padding: 7px 10px;
+  }
+  .dw-launch:hover { background: #fff; }
+
+  .map-directions {
+    background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.2); border-radius: 4px;
+    padding: 8px; font: 12px/1.4 "Avenir Next","Segoe UI",sans-serif; color: #222;
+    box-shadow: 0 1px 5px rgba(0,0,0,.3); width: min(280px, calc(100vw - 20px)); box-sizing: border-box;
+    max-height: 78vh; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .map-directions .dw-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .map-directions .dw-title {
+    flex: 1 1 auto; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: #00619b; font-weight: 700;
+  }
+  .map-directions .dw-x { border: 0; background: none; cursor: pointer; color: #888; font-size: 17px; line-height: 1; padding: 0 3px; }
+  .map-directions .dw-x:hover { color: #333; }
+
+  .map-directions .dw-row { display: flex; align-items: center; gap: 5px; margin: 4px 0; }
+  .map-directions .dw-letter {
+    flex: 0 0 18px; height: 18px; border-radius: 50%; background: #00619b; color: #fff;
+    font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .map-directions input.dw-input {
+    flex: 1 1 auto; min-width: 0; border: 1px solid rgba(0,0,0,.25); border-radius: 3px;
+    padding: 5px 7px; font: inherit; color: #222; background: #fff; outline: none;
+  }
+  .map-directions input.dw-input:focus { border-color: #00619b; }
+  .map-directions .dw-mini {
+    flex: 0 0 auto; border: 1px solid rgba(0,0,0,.18); background: #fff; border-radius: 3px;
+    cursor: pointer; font-size: 12px; line-height: 1; padding: 4px 5px; color: #555;
+  }
+  .map-directions .dw-mini:hover { background: #eef4f8; color: #00619b; }
+  .map-directions .dw-mini.active { background: #00619b; border-color: #00619b; color: #fff; }
+
+  .map-directions .dw-controls { display: flex; align-items: center; gap: 5px; margin-top: 7px; }
+  .map-directions select.dw-profile {
+    flex: 1 1 auto; min-width: 0; border: 1px solid rgba(0,0,0,.25); border-radius: 3px;
+    padding: 5px; font: inherit; background: #fff; color: #222;
+  }
+  .map-directions .dw-btn {
+    border: 1px solid #00619b; background: #00619b; color: #fff; border-radius: 3px;
+    padding: 5px 10px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .map-directions .dw-btn:hover { background: #00507f; }
+  .map-directions .dw-btn.dw-ghost { background: #fff; color: #666; border-color: rgba(0,0,0,.2); }
+  .map-directions .dw-btn.dw-ghost:hover { color: #333; }
+  .map-directions .dw-add { border: 0; background: none; color: #00619b; cursor: pointer; font: inherit; padding: 2px 0 2px 23px; }
+  .map-directions .dw-add:hover { text-decoration: underline; }
+
+  .map-directions .dw-status { margin-top: 7px; color: #888; font-style: italic; }
+  .map-directions .dw-status.dw-err { color: #c1272d; font-style: normal; }
+  .map-directions .dw-summary {
+    margin-top: 7px; padding: 6px 7px; background: #f3f7fa; border-radius: 3px;
+    font-weight: 600; color: #00619b;
+  }
+  .map-directions .dw-summary span { display: block; font-weight: 400; font-size: 10.5px; color: #888; }
+  .map-directions ol.dw-steps {
+    margin: 6px 0 0; padding: 0 0 0 20px; max-height: 34vh; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .map-directions ol.dw-steps li { padding: 3px 0; border-bottom: 1px solid #eee; }
+  .map-directions ol.dw-steps li:last-child { border-bottom: 0; }
+  .map-directions .dw-stepdist { color: #888; font-size: 10.5px; }
+
+  /* Waypoint markers dropped by the routing control */
+  .dw-wp-icon { background: none; border: none; }
+  .dw-wp {
+    display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+    border-radius: 50%; background: #00619b; color: #fff;
+    font: 700 11px/1 "Avenir Next","Segoe UI",sans-serif; border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.45);
+  }
+
+  /* Crosshair while the user is picking a waypoint off the map */
+  .dw-picking { cursor: crosshair !important; }
+</style>
+
+<div id="WashtenawMap"></div>
+
+<script>
+// ============================================================================
+// WASHTENAW COUNTY SCHOOLS & PUBLIC SAFETY MAP
+// ----------------------------------------------------------------------------
+// County build of the statewide Michigan map. Carries the full statewide
+// feature set — schools, districts / intermediate districts, health care,
+// local law enforcement, STATE POLICE POSTS, dynamic legend, cross-layer
+// search, and ORS-powered DIRECTIONS — but keeps the county-tuned trims:
+// lower zoom thresholds, and Villages / MCDs / Counties left out of search
+// (those three remain statewide services here, so a same-named place outside
+// Washtenaw could otherwise be matched).
+// ============================================================================
+
+// ============================================================================
+// SETUP
+// ============================================================================
+// Washtenaw County, Michigan. Zoom 10 frames the whole county on a laptop; the
+// initial fitBounds below replaces this once the footprint extent comes back.
+const map = L.map('WashtenawMap', {
+  preferCanvas: false, updateWhenZooming: false, updateWhenIdle: true,
+  minZoom: 9   // below this the county datasets are just a speck on an empty map
+}).setView([42.2529, -83.8264], 10);
+L.esri.basemapLayer('Streets').addTo(map);
+
+const SERVICES = 'https://services3.arcgis.com/DwYBePxTPLzTYNGn/arcgis/rest/services/';
+const layer = (path, opts = {}) => L.esri.featureLayer({ url: SERVICES + path, ...opts });
+
+// Field names differ in casing across these feature services, so read tolerantly:
+// grab the first non-empty property matching any of the candidate names.
+const pick = (props, ...names) => {
+  if (!props) return null;
+  for (const n of names) {
+    const key = props && Object.keys(props).find(k => k.toLowerCase() === n.toLowerCase());
+    if (key != null && props[key] != null && String(props[key]).trim() !== '') return props[key];
+  }
+  return null;
+};
+
+const properCase = s => String(s ?? '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+const esc = s => String(s ?? '').replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const MI = 1609.344;                 // metres per mile
+const CLICK_TOLERANCE_PX = 10;
+// Thresholds are lower than the statewide map's: a county's worth of features is
+// a small enough payload to draw at the default (whole-county) view.
+const POINTS_MIN_ZOOM = 9;           // don't draw point markers if zoomed out past this
+const FOOTPRINT_ZOOM = 15;           // swap from points to building outlines here
+const FACILITY_MIN_ZOOM = 11;        // health care / local law enforcement / state police posts
+
+// ============================================================================
+// SYMBOLOGY
+// ============================================================================
+// Red = private, blue = public, grey = unknown
+const getColor = p => {
+  const t = (p.TYPE || p.type || '').toLowerCase().trim();
+  return t === 'private' ? '#FF3333' : t === 'public' ? '#3388FF' : '#808080';
+};
+
+// Deterministic pseudo-random colour per district name
+const getRandomColor = str => {
+  if (!str) return '#808080';
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360}, 65%, 65%)`;
+};
+
+// Shared divIcon factory for the facility markers.
+const glyphIcon = (cls, shape, color, glyph, h) => L.divIcon({
+  className: cls,
+  html: `<span class="${shape}" style="--c:${color}">${glyph}</span>`,
+  iconSize: [18, h], iconAnchor: [9, h / 2], popupAnchor: [0, -h / 2]
+});
+const svg = d => `<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="${d}" fill="#fff"/></svg>`;
+
+const HEALTH_GLYPH = `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <rect x="6.4" y="2" width="3.2" height="12" fill="#fff"/>
+    <rect x="2" y="6.4" width="12" height="3.2" fill="#fff"/></svg>`;
+const SP_POST_GLYPH  = svg('M8 1 L14 3.5 V8 C14 11.5 11.3 14 8 15.2 C4.7 14 2 11.5 2 8 V3.5 Z');   // shield
+const LOCAL_LE_GLYPH = svg('M8 1.5 L9.8 6 L14.5 6.3 L10.9 9.3 L12.1 13.9 L8 11.3 L3.9 13.9 L5.1 9.3 L1.5 6.3 L6.2 6 Z'); // star
+
+// Health care: colour by facility type, hospitals red. Homes for the aged are
+// excluded from the map symbols entirely.
+const facType = p => String(pick(p, 'Facility_1', 'FacilityType', 'Facility_Type', 'TYPE') || '').toLowerCase();
+const getHealthColor = p => {
+  const t = facType(p);
+  if (t.includes('hospital')) return '#c1272d';
+  if (t.includes('nursing') || t.includes('home')) return '#7b3f9d';
+  return '#0f8a8a';
+};
+// Nursing homes and homes for the aged are not symbolised on this map. The
+// facility-type field name isn't guaranteed across services, so every string
+// attribute is scanned for these category phrases.
+const EXCLUDED_HCU = [
+  /nursing\s*(home|care|facilit)/,
+  /skilled\s*nursing/,
+  /\bsnf\b/,
+  /home[s]?\s*for\s*the\s*aged/,
+  /\bhfa\b/,
+  /aged\s*home/
+];
+const isExcludedHealthUnit = p => !!p && Object.values(p).some(
+  v => typeof v === 'string' && EXCLUDED_HCU.some(re => re.test(v.toLowerCase())));
+
+// esri-leaflet requires pointToLayer to return a layer (returning null throws),
+// so excluded features get a zero-size, non-interactive stand-in instead.
+const HIDDEN_ICON = L.divIcon({ className: 'hcu-hidden', html: '', iconSize: [0, 0] });
+
+// Marker factory for the point-facility layers. `extra.exclude` is a
+// predicate on feature properties; matching features are rendered invisibly.
+const facilityPoints = (path, icon, titleFields, fallbackTitle, extra = {}) => {
+  const { exclude, ...opts } = extra;
+  return layer(path, {
+    precision: 6,
+    pointToLayer: (gj, latlng) => {
+      if (exclude && exclude(gj.properties)) {
+        return L.marker(latlng, { icon: HIDDEN_ICON, interactive: false, opacity: 0, keyboard: false });
+      }
+      return L.marker(latlng, {
+        icon: typeof icon === 'function' ? icon(gj.properties) : icon,
+        riseOnHover: true,
+        title: pick(gj.properties, ...titleFields) || fallbackTitle
+      });
+    },
+    ...opts
+  });
+};
+
+// ============================================================================
+// LAYERS
+// ============================================================================
+// School points <-> footprints (swapped at zoom thresholds)
+const schools = layer('WashtenawSchoolPoints/FeatureServer/0', {
+  precision: 6,                                   // PERF: trim coord precision on the wire
+  pointToLayer: (gj, latlng) => L.circleMarker(latlng, {
+    radius: 3.5, fillColor: getColor(gj.properties), fillOpacity: 1, color: '#004561', weight: 0.5
+  })
+});
+
+const footprints = layer('WashtenawSchoolFootprints/FeatureServer/0', {
+  precision: 6,                                   // PERF: lighter payload, full detail kept
+  style: f => ({ fillColor: getColor(f.properties), fillOpacity: 0.8, color: '#000', weight: 1 })
+});
+
+// Intermediate school districts (filled + one label on the largest landmass).
+// Kept as a named layer so the popup code can query it directly — this is the
+// authoritative "which ISD is this location in" source, since the Name_1/ISD_1
+// fields joined onto School_Districts proved unreliable (e.g. Ann Arbor Public
+// Schools showing "Oakland Schools").
+const labelLayer = L.layerGroup().addTo(map);
+const labelTracker = {};  // name -> { area, marker }
+
+const intermediateDistricts = layer('Intermediate_School_Districts/FeatureServer/0', {
+  simplifyFactor: 0.35,     // PERF: gentler than the statewide map — fewer, smaller polygons
+  precision: 5,             // PERF: ~1 m coords, plenty for these boundaries
+  interactive: false,
+  style: f => ({
+    color: '#000', weight: 2, opacity: 1, fill: true,
+    fillColor: getRandomColor(f.properties.NAME || f.properties.Label || ''), fillOpacity: 0.25
+  }),
+  onEachFeature: (feature, lyr) => {
+    const name = feature.properties.NAME || feature.properties.Label || '';
+    if (!name) return;
+
+    // Find the largest ring and its vertex-average centroid
+    let maxArea = 0, center = null;
+    const scan = pts => {
+      if (!pts.length) return;
+      if (!(pts[0] instanceof L.LatLng)) return pts.forEach(scan);
+      let area = 0, latSum = 0, lngSum = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length];
+        area += a.lng * b.lat - b.lng * a.lat;
+        latSum += a.lat; lngSum += a.lng;
+      }
+      area = Math.abs(area) / 2;
+      if (area > maxArea) {
+        maxArea = area;
+        center = L.latLng(latSum / pts.length, lngSum / pts.length);
+      }
+    };
+    scan(lyr.getLatLngs());
+    if (!center) return;
+
+    // Keep only the label anchored to the biggest landmass seen for this name
+    const prev = labelTracker[name];
+    if (prev && maxArea <= prev.area) return;
+    if (prev) labelLayer.removeLayer(prev.marker);
+
+    const marker = L.circleMarker(center, { radius: 0, opacity: 0, fillOpacity: 0 })
+      .bindTooltip(feature.properties.Label || name, {
+        permanent: true, direction: 'center', className: 'isd-label'
+      });
+    labelLayer.addLayer(marker);
+    labelTracker[name] = { area: maxArea, marker };
+  }
+}).addTo(map);
+
+// School district outlines (no fill, kept on top)
+const schoolDistricts = layer('Washtenaw_School_Districts/FeatureServer/0', {
+  simplifyFactor: 0.35,     // PERF: only a dozen districts here, so keep more detail
+  precision: 5,
+  interactive: false,
+  style: () => ({ color: '#000', weight: 1, opacity: 0.3, fill: false })
+}).addTo(map);
+schoolDistricts.on('load', () => schoolDistricts.bringToFront());
+
+// Washtenaw County outline, drawn for orientation. This is the statewide county
+// layer with a name filter, so only the one polygon comes back.
+const countyOutline = layer('County/FeatureServer/0', {
+  where: "UPPER(Name) LIKE '%WASHTENAW%'",
+  precision: 5,
+  interactive: false,
+  style: () => ({ color: '#00619b', weight: 2.5, opacity: 0.85, fill: false, dashArray: '6 4' })
+}).addTo(map);
+countyOutline.on('load', () => countyOutline.bringToFront());
+
+// Query-only boundary layers (never added to the map)
+const counties            = layer('County/FeatureServer/0');   // statewide — filter by name when fitting
+const minorCivilDivision  = layer('Minor_Civil_Divisions/FeatureServer/0');
+const villages            = layer('MI_Villages/FeatureServer/0');
+const statePoliceZones    = layer('Washtenaw_State_Police_Zones/FeatureServer/0');
+const emshdZones          = layer('EMSHD_Zones_Washtenaw/FeatureServer/0');
+const psapBoundaries      = layer('PSAP_Boundary_Washtenaw/FeatureServer/0');
+
+// Point facility layers, shown only when zoomed in
+const localLawEnforcement = facilityPoints('LocalLawEnforcement/FeatureServer/0',
+  glyphIcon('le-icon', 'le-badge', '#8a6b12', LOCAL_LE_GLYPH, 20),
+  ['NAME', 'Name', 'DEPARTMENT', 'Department'], 'Local Law Enforcement');
+
+const healthCareUnits = facilityPoints('WashtenawHealthCareUnits/FeatureServer/0',
+  p => glyphIcon('hcu-icon', 'hcu-pin', getHealthColor(p), HEALTH_GLYPH, 18),
+  ['NAME', 'Name', 'FACILITY', 'Facility'], 'Health Care Unit',
+  { exclude: isExcludedHealthUnit });  // nursing homes / homes for the aged are never drawn
+
+// State police posts. Like County / PSAP / EMHSD / State Police Zones on this
+// county map, this remains the STATEWIDE MSP posts service — so "nearest post"
+// lookups correctly reach across county lines (the post serving Washtenaw may
+// physically sit in a neighbouring county), while the marker layer only loads
+// the posts in the current view.
+const statePolicePosts = facilityPoints('MI_StatePolice_Posts/FeatureServer/32',
+  glyphIcon('le-icon', 'le-badge', '#1b3a6b', SP_POST_GLYPH, 20),
+  ['NAME', 'Name', 'POST', 'POST_NAME'], 'State Police Post');
+
+// ============================================================================
+// ZOOM-DRIVEN VISIBILITY
+// ============================================================================
+// Each facility layer switches on past its own threshold (kept separate so they
+// can be tuned independently if the map gets busy).
+const zoomToggled = [
+  { layer: healthCareUnits,     minZoom: FACILITY_MIN_ZOOM },
+  { layer: statePolicePosts,    minZoom: FACILITY_MIN_ZOOM },
+  { layer: localLawEnforcement, minZoom: FACILITY_MIN_ZOOM }
+];
+
+const toggle = (lyr, on) => {
+  if (on && !map.hasLayer(lyr)) map.addLayer(lyr);
+  else if (!on && map.hasLayer(lyr)) map.removeLayer(lyr);
+};
+
+function updateLayers() {
+  const z = map.getZoom();
+  zoomToggled.forEach(e => toggle(e.layer, z >= e.minZoom));
+  toggle(footprints, z >= FOOTPRINT_ZOOM);                    // zoomed way in: building outlines
+  toggle(schools, z >= POINTS_MIN_ZOOM && z < FOOTPRINT_ZOOM); // medium zoom: school points
+  toggle(labelLayer, z < POINTS_MIN_ZOOM);                    // zoomed way out: ISD labels only
+}
+map.on('zoomend', updateLayers);
+updateLayers();
+
+// Frame Washtenaw County on load.
+//
+// NOTE: several of these services (County, PSAP, EMHSD) are still the
+// statewide layers — only the school, health care, local law enforcement and
+// district layers are county extracts. So the county boundary is fetched with
+// an explicit name filter rather than `1=1`, which would return all 83
+// Michigan counties and frame the whole state.
+const COUNTY_WHERE = "UPPER(Name) LIKE '%WASHTENAW%'";
+
+counties.query().where(COUNTY_WHERE).bounds((err, bounds) => {
+  if (!err && bounds && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [10, 10] });
+    updateLayers();
+    return;
+  }
+  // Fall back to the district extract, which is already county-clipped.
+  schoolDistricts.query().bounds((e2, b2) => {
+    if (!e2 && b2 && b2.isValid()) map.fitBounds(b2, { padding: [10, 10] });
+    updateLayers();
+  });
+});
+
+// ============================================================================
+// QUERY HELPERS
+// ============================================================================
+// Point-in-polygon: first feature of `layer` intersecting the clicked point.
+const queryIntersect = (lyr, latlng) => new Promise(resolve => {
+  lyr.query().intersects(latlng).returnGeometry(false)
+    .run((err, fc) => resolve(!err && fc && fc.features.length ? fc.features[0].properties : null));
+});
+
+// Every feature intersecting a geometry or point. Mirrors Arcade's
+// Intersects(featureSet, $feature), which returns all hits, not just the first.
+const queryIntersectAll = (lyr, geom) => new Promise(resolve => {
+  lyr.query().intersects(geom).returnGeometry(false)
+    .run((err, fc) => resolve(!err && fc && fc.features ? fc.features.map(f => f.properties) : []));
+});
+
+// Nearest point feature within `radiusMiles` (replaces the Arcade
+// BufferGeodetic + DistanceGeodetic loop). Distance computed client-side.
+const queryNearest = (lyr, latlng, radiusMiles, filterFn) => new Promise(resolve => {
+  const finish = fc => {
+    if (!fc || !fc.features || !fc.features.length) return resolve(null);
+    let best = null, bestM = Infinity;
+    for (const f of fc.features) {
+      if (filterFn && !filterFn(f.properties)) continue;
+      if (!f.geometry || f.geometry.type !== 'Point') continue;
+      const [lng, lat] = f.geometry.coordinates;
+      const d = latlng.distanceTo(L.latLng(lat, lng));
+      if (d < bestM) { bestM = d; best = f; }
+    }
+    resolve(best ? { props: best.properties, miles: bestM / MI } : null);
+  };
+  lyr.query().nearby(latlng, radiusMiles * MI).run((err, fc) => {
+    if (!err) return finish(fc);
+    // Fallback if the service rejects a distance query: pull everything.
+    lyr.query().where('1=1').run((err2, fc2) => finish(err2 ? null : fc2));
+  });
+});
+
+// The school district polygon under a point, WITH geometry, so further
+// Intersects() calls can run against it (as Arcade did with $feature).
+const queryDistrictAt = latlng => new Promise(resolve => {
+  schoolDistricts.query().intersects(latlng).returnGeometry(true)
+    .run((err, fc) => resolve(!err && fc && fc.features.length ? fc.features[0] : null));
+});
+
+// Footprint properties under a clicked coordinate.
+// NOTE: we listen on the MAP and spatially query rather than relying on
+// esri-leaflet forwarding per-feature DOM clicks (which silently didn't fire).
+// This is immune to z-order, bringToFront, `interactive`, and canvas hit-testing.
+const queryFootprintAt = latlng => queryIntersect(footprints, latlng);
+
+// Pixel distance -> metres at the current centre/zoom, so click tolerance stays
+// sane regardless of zoom level.
+function pixelsToMeters(px) {
+  const c = map.latLngToContainerPoint(map.getCenter());
+  return map.getCenter().distanceTo(map.containerPointToLatLng(L.point(c.x + px, c.y)));
+}
+
+// Nearest school point within a small click-tolerance radius (same workaround).
+const querySchoolPointAt = latlng =>
+  queryNearest(schools, latlng, pixelsToMeters(CLICK_TOLERANCE_PX) / MI).then(r => r ? r.props : null);
+
+// ============================================================================
+// POPUP BUILDING BLOCKS
+// ============================================================================
+const row = (label, value) => `<tr><td>${esc(label)}</td><td>${esc(value || '\u2014')}</td></tr>`;
+
+// A URL field rendered as a link; falls back to plain text when it is a
+// placeholder like "NOT AVAILABLE" rather than an actual address.
+const linkRow = (label, url, text) => {
+  const raw = String(url || '').trim();
+  if (!raw || !/^https?:\/\//i.test(raw)) return row(label, raw);
+  return `<tr><td>${esc(label)}</td><td><a href="${esc(raw)}" target="_blank" rel="noopener noreferrer">${esc(text || raw)}</a></td></tr>`;
+};
+
+const card = (title, body) => `<div class="school-popup"><h3>${esc(title)}</h3>${body}</div>`;
+const table = rows => `<table>${rows.join('')}</table>`;
+
+// Open a loading popup, then hand it to an async builder.
+function openPopup(latlng, options, loadingText, build, errorText) {
+  const popup = L.popup({ autoPanPadding: [30, 30], ...options })
+    .setLatLng(latlng)
+    .setContent(`<div class="school-popup sp-loading">${loadingText}\u2026</div>`)
+    .openOn(map);
+  Promise.resolve(build(popup)).catch(() => {
+    if (popup.isOpen()) popup.setContent(`<div class="school-popup">${errorText}</div>`);
+  });
+}
+
+const setIfOpen = (popup, html) => { if (popup.isOpen()) popup.setContent(html); };
+
+// Arcade expression — expand school name suffixes (EL SCH, HS, MS, ...)
+function formatSchoolName(name) {
+  const parts = String(name || '').trim().toUpperCase().split(/\s+/);
+  const last = () => parts[parts.length - 1];
+  let addOn = '';
+  if (last() === 'SCH') {
+    parts.pop(); addOn = ' School';
+    if (last() === 'EL') { parts.pop(); addOn = ' Elementary School'; }
+  }
+  else if (last() === 'HS')   { parts.pop(); addOn = ' High School'; }
+  else if (last() === 'MS')   { parts.pop(); addOn = ' Middle School'; }
+  else if (last() === 'SHS')  { parts.pop(); addOn = ' Senior High School'; }
+  else if (last() === 'JSHS') { parts.pop(); addOn = ' Junior High School'; }
+  else if (last() === 'CTR')  { parts.pop(); addOn = ' Center'; }
+  return properCase(parts.join(' ')) + addOn;
+}
+
+// Arcade expression — expand intermediate district suffix (ISD, RESA, ...)
+function formatDistrictIU(name) {
+  const suffixes = {
+    ISD:  ' Intermediate School District',
+    ESD:  ' Educational Service District',
+    ESA:  ' Educational Service Agency',
+    RESA: ' Regional Educational Service Agency',
+    RESD: ' Regional Educational Service District'
+  };
+  const parts = String(name || '').trim().split(/\s+/);
+  const suf = suffixes[parts[parts.length - 1]];
+  return suf ? parts.slice(0, -1).join(' ') + suf : name;
+}
+
+// ============================================================================
+// SCHOOL (FOOTPRINT / POINT) POPUP — recreates the ESRI Arcade popup
+// ============================================================================
+async function buildFootprintPopup(latlng, props, popup) {
+  // Fire every lookup in parallel (Arcade did these serially, per expression)
+  const [county, village, mcd, district, psap, emhsd, spZone, isd, spPost, lawEnf, hospital] =
+    await Promise.all([
+      queryIntersect(counties, latlng),
+      queryIntersect(villages, latlng),
+      queryIntersect(minorCivilDivision, latlng),
+      queryIntersect(schoolDistricts, latlng),
+      queryIntersect(psapBoundaries, latlng),
+      queryIntersect(emshdZones, latlng),
+      queryIntersect(statePoliceZones, latlng),
+      queryIntersect(intermediateDistricts, latlng),   // authoritative ISD lookup — see note above
+      queryNearest(statePolicePosts, latlng, 500),
+      queryNearest(localLawEnforcement, latlng, 500),
+      queryNearest(healthCareUnits, latlng, 500, p => pick(p, 'Facility_1') === 'Hospital')
+    ]);
+
+  // School / district / municipality / county
+  const schoolName   = formatSchoolName(pick(props, 'NAME', 'Name'));
+  const schoolType   = properCase(pick(props, 'TYPE', 'Type') || '');
+  const countyName   = properCase(pick(county, 'Label', 'NAME') || 'Unknown County');
+  const villageName  = pick(village, 'Label', 'NAME');
+  const muniName     = pick(mcd, 'Label', 'NAME') || 'Unknown Municipality';
+  const joiner       = String(muniName).split(' ')[0] === 'City' ? ' in the ' : ' in ';
+  const boundaryText = villageName ? properCase(villageName) + joiner + muniName : muniName;
+  const distName     = pick(district, 'Name', 'NAME') || 'Unknown School District';
+  // NOTE: previously read district.Name_1, an attribute joined onto the
+  // School_Districts service that was unreliable (e.g. showed "Oakland Schools"
+  // for Ann Arbor Public Schools). Now queried from the ISD boundary layer.
+  const distIU = formatDistrictIU(pick(isd, 'Label', 'NAME') || 'Unknown School District Intermediate Unit');
+
+  // PSAP / EMHSD / State Police zone
+  const psapName  = properCase(pick(psap, 'DISPNAME') || 'PSAP Zone Unavailable');
+  const emhsdName = properCase(pick(emhsd, 'EMHSD') || 'EMHSD District Unavailable');
+  const troopName = pick(spZone, 'POST_DISTRICT') || 'State Police Troop Unavailable';
+
+  // Nearest facilities
+  const fmtNear = (r, withAddr) => r
+    ? properCase(pick(r.props, 'NAME', 'Name')) + ' (' + r.miles.toFixed(2) + ' mi)' +
+      (withAddr && pick(r.props, 'StreetAddr')
+        ? ' located at ' + properCase(pick(r.props, 'StreetAddr')) : '')
+    : 'None found';
+
+  setIfOpen(popup, card(`${schoolType} School: ${schoolName}`, `
+      <div class="sp-block">This is the School &quot;${esc(schoolName)}&quot;.
+- ${esc(distName)} School District.
+- Intermediate District: ${esc(distIU)}.</div>
+
+      <div class="sp-block">Municipality: ${esc(boundaryText)}
+County: ${esc(countyName)}</div>
+
+      ${table([
+        row('School Type', schoolType),
+        row('ZIP Code', pick(props, 'ZIP', 'ZIPCODE', 'ZIP_CODE') || ''),
+        row('Name', schoolName),
+        row('County', countyName),
+        row('City', properCase(pick(props, 'CITY', 'City') || '')),
+        row('Street', properCase(pick(props, 'STREET', 'Street') || ''))
+      ])}
+
+      <div class="sp-block">This school is located in the ${esc(psapName)} PSAP Area, in the EMHSD District #${esc(emhsdName)}.</div>
+      <div class="sp-block">The area is in the ${esc(troopName)} State Police Zone.</div>
+
+      <h4>Nearest Facilities (distance in miles)</h4>
+      ${table([
+        row('Nearest Hospital', fmtNear(hospital, true)),
+        row('Nearest State Police Post', fmtNear(spPost)),
+        row('Nearest Local Law Enforcement', fmtNear(lawEnf))
+      ])}`));
+}
+
+// ============================================================================
+// SCHOOL DISTRICT POPUP — translated from the Arcade expressions on the
+// ESRI "School District: <Name>" card.
+// ============================================================================
+const sortStrings = arr => [...arr].sort((a, b) => a.localeCompare(b));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+async function buildDistrictPopup(latlng, popup) {
+  const distFeature = await queryDistrictAt(latlng);
+  if (!distFeature) {
+    return setIfOpen(popup, '<div class="school-popup">No school district found here.</div>');
+  }
+
+  const dProps = distFeature.properties;
+  const geometry = distFeature.geometry;
+
+  const [countyList, mcdList, spZoneList, emhsdList, psapList, isd, healthCount, lawEnfCount, spPostCount] =
+    await Promise.all([
+      queryIntersectAll(counties, geometry),
+      queryIntersectAll(minorCivilDivision, geometry),
+      queryIntersectAll(statePoliceZones, geometry),
+      queryIntersectAll(emshdZones, geometry),
+      queryIntersectAll(psapBoundaries, geometry),
+      queryIntersect(intermediateDistricts, latlng),   // authoritative ISD lookup — see note below
+      queryIntersectAll(healthCareUnits, geometry).then(a => a.filter(p => !isExcludedHealthUnit(p)).length),
+      queryIntersectAll(localLawEnforcement, geometry).then(a => a.length),
+      queryIntersectAll(statePolicePosts, geometry).then(a => a.length)
+    ]);
+
+  const district = pick(dProps, 'Name', 'NAME') || 'Unknown School District';
+  // NOTE: previously read dProps.Name_1 / dProps.ISD_1 — joined attributes that
+  // proved unreliable (Ann Arbor Public Schools showed "Oakland Schools" as its
+  // ISD). Now taken from the ISD boundary layer, the same source used for the
+  // fills and labels elsewhere on this map.
+  const districtIUName = pick(isd, 'Label', 'NAME') || 'Unknown Intermediate District';
+  const districtIUNum  = pick(isd, 'ISD', 'ISD_1', 'ISDNUM', 'ISD_NUM', 'ISDCode', 'ISD_CODE') || '';
+  const peninsula = pick(dProps, 'Peninsula');
+
+  const counties_ = sortStrings(countyList.map(c => properCase(pick(c, 'Name', 'NAME')) + ' County'));
+  const munis     = sortStrings(mcdList.map(m => pick(m, 'Label', 'NAME')).filter(Boolean));
+
+  const distText  = `This is the ${district} School District.`;
+  const iuText    = `The district is a part of the Intermediate Unit #${districtIUNum}: ${districtIUName}.`;
+  const adminText = `It overlaps with a total of ${counties_.length}${counties_.length === 1 ? ' County' : ' Counties'}` +
+                    ` and ${munis.length} Minor Civil Division${munis.length === 1 ? ';' : 's;'}`;
+
+  const psapAux  = plural(psapList.length, 'Public Safety Answering Point (PSAP)',
+                                           'different Public Safety Answering Points (PSAP)');
+  const emhsdAux = plural(emhsdList.length, 'Emergency Management and Homeland Security Division (EMHSD).',
+                                            'different Emergency Management and Homeland Security Divisions (EMHSD).');
+
+  const spNames = spZoneList.map(sp => pick(sp, 'POST_DISTRICT')).filter(Boolean);
+  const spAux = spNames.length === 0
+    ? ' State Police District information not available.'
+    : ' State Police District, ' + (spNames.length === 2 ? spNames.join(' and ') : spNames.join(', '));
+
+  const psapText = `The district is covered by ${psapAux} and ${emhsdAux}`;
+  const spText   = `The district is in the zone of ${spNames.length}${spAux}`;
+
+  setIfOpen(popup, card(`School District: ${district}`, `
+      ${table([
+        row('Name', district),
+        row('Type', 'School'),
+        row('Intermediate District', districtIUName),
+        row('ISD #', districtIUNum),
+        peninsula ? row('Peninsula', peninsula) : '',
+        row('Counties', counties_.length ? counties_.join(', ') : 'None'),
+        row('Minor Civil Divisions', munis.length ? munis.join(', ') : 'None')
+      ])}
+
+      <div class="sp-block">${esc(distText)}
+${esc(iuText)}</div>
+
+      <div class="sp-block">${esc(adminText)}</div>
+
+      <h4>Emergency Responders and Law Enforcement within boundaries</h4>
+      <div class="sp-block">${esc(psapText)}</div>
+      <div class="sp-block">${esc(spText)}</div>
+
+      ${table([
+        row('Health Care Units', healthCount),
+        row('Local Law Enforcement Locations', lawEnfCount),
+        row('Michigan State Police Posts', spPostCount)
+      ])}`));
+}
+
+// ============================================================================
+// FACILITY POPUPS (health care, state police posts, local law enforcement)
+// Mirror the ESRI pop-up configs. County comes from the feature when present,
+// otherwise it is resolved spatially against the county boundary layer.
+// ============================================================================
+async function facilityFields(props, latlng) {
+  let county = pick(props, 'COUNTY', 'County', 'CNTY_NAME', 'County_Name');
+  if (!county) county = pick(await queryIntersect(counties, latlng), 'Label', 'NAME', 'Name');
+  return {
+    address: properCase(pick(props, 'StreetAddr', 'ADDRESS', 'Address', 'STREET', 'Street') || ''),
+    city:    properCase(pick(props, 'CITY', 'City') || ''),
+    county:  county ? properCase(county) : '',
+    zip:     pick(props, 'ZIP', 'ZIPCODE', 'ZIP_CODE', 'Zip') || '',
+    phone:   pick(props, 'TELEPHONE', 'Telephone', 'PHONE', 'Phone', 'PHONE_NUM') || ''
+  };
+}
+
+// cfg: { name, title, rows } — rows() returns an array of table row strings.
+const facilityPopupBuilder = cfg => async (latlng, props, popup) => {
+  const name = cfg.name(props);
+  const f = await facilityFields(props, latlng);
+  setIfOpen(popup, card(cfg.title(name), table(cfg.rows(name, f, props))));
+};
+
+const buildHealthPopup = facilityPopupBuilder({
+  name: p => properCase(pick(p, 'NAME', 'Name', 'FACILITY', 'Facility', 'FACILITY_N') || 'Health Care Unit'),
+  title: n => `Health Care Unit: ${n}`,
+  rows: (name, f, p) => [
+    row('Name', name),
+    row('Facility Type', pick(p, 'Facility_1', 'FacilityType', 'Facility_Type', 'FAC_TYPE', 'TYPE') || 'Unknown'),
+    row('Address', f.address),
+    row('City', f.city),
+    row('County', f.county ? f.county + (/county$/i.test(f.county) ? '' : ' County') : 'Unknown'),
+    row('ZIP Code', f.zip)
+  ]
+});
+
+const buildLocalLawEnforcementPopup = facilityPopupBuilder({
+  name: p => pick(p, 'NAME', 'Name', 'DEPARTMENT', 'Department', 'DEPT_NAME') || 'Local Law Enforcement',
+  title: n => n,
+  rows: (name, f, p) => [
+    row('Local Police Department Name', name),
+    row('Department Type', pick(p, 'DEPT_TYPE', 'DeptType', 'Department_Type', 'TYPE', 'Type') || 'Local Police Department'),
+    row('Address', f.address),
+    row('City', f.city),
+    row('County', f.county),
+    row('ZIP Code', f.zip),
+    row('Telephone', f.phone),
+    linkRow('Website', pick(p, 'WEBSITE', 'Website', 'URL', 'Url', 'WEB'), 'View')
+  ]
+});
+
+const buildStatePolicePostPopup = facilityPopupBuilder({
+  name: p => pick(p, 'NAME', 'Name', 'POST', 'POST_NAME', 'POST_DISTRICT') || 'Michigan State Police Post',
+  title: n => n,
+  rows: (name, f, p) => [
+    row('State Police Post', name),
+    row('Address', f.address),
+    row('City', f.city),
+    row('County', f.county),
+    row('ZIP Code', f.zip),
+    row('Telephone', f.phone),
+    linkRow('Source', pick(p, 'SOURCE', 'Source', 'URL', 'Url', 'WEBSITE', 'Website'), 'View')
+  ]
+});
+
+// ============================================================================
+// CLICK HANDLER — facility marker, else school, else district
+// ============================================================================
+map.on('click', async e => {
+  // The directions widget claims the click while a waypoint is being picked.
+  if (window.__dwPickClick && window.__dwPickClick(e.latlng)) return;
+
+  const z = map.getZoom();
+  const latlng = e.latlng;
+
+  // Facility layers sit on top of the school layers, so they get first look.
+  // All are queried together and the closest hit wins — a fixed priority
+  // order would let the topmost layer swallow clicks meant for a neighbouring
+  // marker where symbols overlap.
+  const candidates = [
+    { layer: healthCareUnits,     build: buildHealthPopup },
+    { layer: statePolicePosts,    build: buildStatePolicePostPopup },
+    { layer: localLawEnforcement, build: buildLocalLawEnforcementPopup }
+  ].filter(() => z >= FACILITY_MIN_ZOOM);
+
+  if (candidates.length) {
+    const tolMiles = pixelsToMeters(CLICK_TOLERANCE_PX + 4) / MI;
+    const hits = await Promise.all(candidates.map(c =>
+      queryNearest(c.layer, latlng, tolMiles)
+        .then(r => {
+          // The popup queries the service directly, so excluded health care
+          // units have to be screened out here too.
+          if (!r) return null;
+          if (c.layer === healthCareUnits && isExcludedHealthUnit(r.props)) return null;
+          return { ...r, build: c.build };
+        })
+        .catch(() => null)));
+
+    const closest = hits.reduce((best, h) => (h && (!best || h.miles < best.miles) ? h : best), null);
+    if (closest) {
+      return openPopup(latlng, { maxWidth: 340 }, 'Loading facility details',
+        popup => closest.build(latlng, closest.props, popup),
+        'Could not load facility details. Try again.');
+    }
+  }
+
+  // Zoomed in far enough to be pointing at a school: footprints are the visible
+  // layer past FOOTPRINT_ZOOM, otherwise the school points layer is. Footprint
+  // hit-testing is exact point-in-polygon, so a click just off a building edge —
+  // or a school with no digitized outline — returns nothing and would fall
+  // through to the district popup. Fall back to the tolerant point lookup so the
+  // school still opens, without weakening the footprint check when it succeeds.
+  if (z >= POINTS_MIN_ZOOM) {
+    const props = z >= FOOTPRINT_ZOOM
+      ? (await queryFootprintAt(latlng)) || (await querySchoolPointAt(latlng))
+      : await querySchoolPointAt(latlng);
+    if (props) {
+      return openPopup(latlng, { maxWidth: 360, maxHeight: 420 }, 'Loading school details',
+        popup => buildFootprintPopup(latlng, props, popup),
+        'Could not load school details. Try again.');
+    }
+  }
+
+  // Nothing under the click (or too zoomed out): fall back to the district popup.
+  openPopup(latlng, { maxWidth: 380, maxHeight: 460 }, 'Loading school district',
+    popup => buildDistrictPopup(latlng, popup),
+    'Could not load school district details. Try again.');
+});
+
+// ============================================================================
+// DYNAMIC LEGEND — only shows features actually present in the current extent.
+// Each row expands to list the individual features in view; clicking one zooms
+// the map to it and opens its popup. Rows can opt out of the expand/dropdown
+// behavior via `expandable: false` (used for Intermediate district, below).
+// Schools are listed first whenever any are in view.
+// ============================================================================
+(function () {
+
+  // --- styles (injected so this whole block is a single paste) --------------
+  const CSS = `
+  .map-legend {
+    background: rgba(255,255,255,.94); border: 1px solid rgba(0,0,0,.2); border-radius: 4px;
+    padding: 8px 10px; font: 12px/1.4 "Avenir Next","Segoe UI",sans-serif; color: #222;
+    box-shadow: 0 1px 5px rgba(0,0,0,.3); max-width: 260px;
+    max-height: 55vh; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .map-legend h5 {
+    margin: 6px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: #00619b; border-bottom: 1px solid #e0e0e0; padding-bottom: 2px;
+  }
+  .map-legend h5:first-child { margin-top: 0; }
+  .map-legend .lg-row { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
+  .map-legend .lg-row.lg-clickable { cursor: pointer; border-radius: 3px; padding: 1px 2px; margin-left: -2px; }
+  .map-legend .lg-row.lg-clickable:hover { background: rgba(0,97,155,.08); }
+  .map-legend .lg-label { flex: 1 1 auto; }
+  .map-legend .lg-count { margin-left: auto; color: #888; font-size: 11px; }
+  .map-legend .lg-caret { color: #888; font-size: 9px; width: 8px; text-align: center;
+                          transition: transform .12s ease; }
+  .map-legend .lg-item.open .lg-caret { transform: rotate(90deg); }
+  .map-legend .lg-empty { color: #888; font-style: italic; }
+
+  /* expanded feature list */
+  .map-legend .lg-sub { display: none; margin: 2px 0 6px 21px; max-height: 168px;
+                        overflow-y: auto; overscroll-behavior: contain;
+                        border-left: 1px solid #e4e4e4; padding-left: 6px; }
+  .map-legend .lg-item.open .lg-sub { display: block; }
+  .map-legend .lg-hit {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    font: inherit; color: #00619b; cursor: pointer; padding: 2px 3px; border-radius: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .map-legend .lg-hit:hover { background: rgba(0,97,155,.12); text-decoration: underline; }
+  .map-legend .lg-more { color: #999; font-style: italic; padding: 2px 3px; font-size: 11px; }
+
+  .lg-sw { display: inline-flex; align-items: center; justify-content: center;
+           width: 14px; height: 14px; flex: 0 0 14px; }
+  .lg-sw svg { width: 9px; height: 9px; }
+  .lg-pin { border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+  .lg-badge { width: 13px; height: 15px; flex-basis: 13px; border-radius: 2px 2px 5px 5px;
+              border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+
+  /* transient highlight ring drawn on the feature you jumped to */
+  .lg-flash { animation: lgFlash 1.6s ease-out 1; }
+  @keyframes lgFlash { 0% { opacity: 1; } 100% { opacity: 0; } }`;
+  const styleEl = document.createElement('style');
+  styleEl.textContent = CSS;
+  document.head.appendChild(styleEl);
+
+  const MAX_LIST = 250;          // cap the expanded list so huge extents stay usable
+  const ZOOM_TO_POINT = 17;      // zoom level used when jumping to a point feature
+
+  // --- swatch helpers ------------------------------------------------------
+  const dot   = c => `<i class="lg-sw" style="background:${c};border-radius:50%;border:1px solid #004561"></i>`;
+  const fill  = c => `<i class="lg-sw" style="background:${c};border:1px solid #000"></i>`;
+  const line  = c => `<i class="lg-sw" style="border-top:2px solid ${c};height:0"></i>`;
+  const pin   = (c, g) => `<i class="lg-sw lg-pin" style="background:${c}">${g}</i>`;
+  const badge = (c, g) => `<i class="lg-sw lg-badge" style="background:${c}">${g}</i>`;
+
+  // --- "what is actually on screen?" ---------------------------------------
+  // Collects the features the layer has already loaded that fall inside the
+  // current bounds. Works for points (getLatLng) and polygons (getBounds).
+  // Returns [{ name, latlng, bounds }] — the raw material for both the count
+  // and the expanded list.
+  function collect(lyr, matchFn, nameFn, fallbackName) {
+    if (!lyr || !map.hasLayer(lyr) || typeof lyr.eachFeature !== 'function') return [];
+    const b = map.getBounds();
+    const out = [];
+    try {
+      lyr.eachFeature(f => {
+        const props = f.feature ? f.feature.properties : null;
+        if (matchFn && !matchFn(props)) return;
+        let latlng = null, bounds = null;
+        if (typeof f.getLatLng === 'function') {
+          latlng = f.getLatLng();
+          if (!b.contains(latlng)) return;
+        } else if (typeof f.getBounds === 'function') {
+          bounds = f.getBounds();
+          if (!b.intersects(bounds)) return;
+          latlng = bounds.getCenter();
+        } else return;
+        let name = '';
+        try { name = String(nameFn ? (nameFn(props) || '') : '').trim(); } catch (e) { name = ''; }
+        out.push({ name: name || fallbackName || 'Unnamed', latlng, bounds });
+      });
+    } catch (e) { /* layer still loading */ }
+    return out;
+  }
+
+  // De-duplicate (footprint + point for the same building, repeated polygons)
+  // and sort alphabetically for a predictable list.
+  const tidy = list => {
+    const seen = new Set(), out = [];
+    for (const e of list) {
+      const key = e.name + '|' + e.latlng.lat.toFixed(4) + ',' + e.latlng.lng.toFixed(4);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  // --- name readers per layer ----------------------------------------------
+  const schoolName = p => {
+    const raw = pick(p, 'NAME', 'Name');
+    if (!raw) return '';
+    try { return typeof formatSchoolName === 'function' ? formatSchoolName(raw) : properCase(raw); }
+    catch (e) { return properCase(raw); }
+  };
+  const healthName   = p => properCase(pick(p, 'NAME', 'Name', 'FACILITY', 'Facility', 'FACILITY_N') || '');
+  const spPostName   = p => pick(p, 'NAME', 'Name', 'POST', 'POST_NAME', 'POST_DISTRICT') || '';
+  const localLEName  = p => pick(p, 'NAME', 'Name', 'DEPARTMENT', 'Department', 'DEPT_NAME') || '';
+  const districtName = p => pick(p, 'Name', 'NAME', 'Label') || '';
+  const isdName      = p => pick(p, 'Label', 'NAME', 'Name') || '';
+
+  // Schools live in two layers (points below FOOTPRINT_ZOOM, footprints above),
+  // so gather across both — only one is ever on the map at a time.
+  const schoolKind = kind => p => {
+    const t = String((p && (p.TYPE || p.type)) || '').toLowerCase().trim();
+    return kind === 'other' ? (t !== 'public' && t !== 'private') : t === kind;
+  };
+  const schoolsInView = kind => tidy([
+    ...collect(schools, schoolKind(kind), schoolName, 'Unnamed school'),
+    ...collect(footprints, schoolKind(kind), schoolName, 'Unnamed school')
+  ]);
+
+  const isHospital = p => facType(p).includes('hospital');
+  const healthInView = wantHospital => tidy(collect(healthCareUnits,
+    p => !isExcludedHealthUnit(p) && (wantHospital ? isHospital(p) : !isHospital(p)),
+    healthName, wantHospital ? 'Hospital' : 'Health care unit'));
+
+  // --- legend definition (order within each group is the display order) -----
+  const GROUPS = [
+    { title: 'Schools', items: [
+      { key: 'sch-pub',  label: 'Public school',  swatch: () => dot('#3388FF'), list: () => schoolsInView('public') },
+      { key: 'sch-priv', label: 'Private school', swatch: () => dot('#FF3333'), list: () => schoolsInView('private') },
+      { key: 'sch-oth',  label: 'Unspecified type', swatch: () => dot('#808080'), list: () => schoolsInView('other') }
+    ]},
+    { title: 'Facilities', items: [
+      { key: 'hosp', label: 'Hospital',              swatch: () => pin('#c1272d', HEALTH_GLYPH),
+        list: () => healthInView(true) },
+      { key: 'hcu',  label: 'Health care unit',      swatch: () => pin('#0f8a8a', HEALTH_GLYPH),
+        list: () => healthInView(false) },
+      { key: 'sp',   label: 'State police post',     swatch: () => badge('#1b3a6b', SP_POST_GLYPH),
+        list: () => tidy(collect(statePolicePosts, null, spPostName, 'State Police Post')) },
+      { key: 'le',   label: 'Local law enforcement', swatch: () => badge('#8a6b12', LOCAL_LE_GLYPH),
+        list: () => tidy(collect(localLawEnforcement, null, localLEName, 'Local Law Enforcement')) }
+    ]},
+    { title: 'Boundaries', items: [
+      { key: 'sd',  label: 'School district',       swatch: () => line('rgba(0,0,0,.45)'),
+        list: () => tidy(collect(schoolDistricts, null, districtName, 'School district')), showCount: false },
+      { key: 'isd', label: 'Intermediate district', swatch: () => fill('rgba(120,160,200,.45)'),
+        list: () => tidy(collect(intermediateDistricts, null, isdName, 'Intermediate district')),
+        showCount: false, expandable: false }
+    ]}
+  ];
+
+  // --- control -------------------------------------------------------------
+  const legendControl = L.control({ position: 'bottomright' });
+  legendControl.onAdd = function () {
+    this._div = L.DomUtil.create('div', 'map-legend');
+    L.DomEvent.disableClickPropagation(this._div);
+    L.DomEvent.disableScrollPropagation(this._div);
+    return this._div;
+  };
+  legendControl.addTo(map);
+
+  const openKeys = new Set();   // which rows are expanded (survives re-render)
+  const entries = {};           // key -> current list of features in view
+
+  function renderLegend() {
+    const el = legendControl._div;
+    if (!el) return;
+
+    const blocks = GROUPS.map(g => {
+      const rows = g.items
+        .map(it => {
+          const list = it.list();
+          entries[it.key] = list;
+          return { it, list };
+        })
+        .filter(r => r.list.length > 0)
+        .map(r => {
+          const it = r.it, n = r.list.length;
+          const expandable = it.expandable !== false;
+
+          // Non-expandable rows (e.g. Intermediate district): plain swatch +
+          // label line, no caret, no click-to-expand, no sub-list.
+          if (!expandable) {
+            return `<div class="lg-row">
+                ${it.swatch()}<span class="lg-label">${it.label}</span>
+                ${it.showCount === false ? '' : `<span class="lg-count">${n}</span>`}
+              </div>`;
+          }
+
+          const shown = r.list.slice(0, MAX_LIST);
+          const sub = shown.map((e, i) =>
+              `<button type="button" class="lg-hit" data-key="${it.key}" data-i="${i}" title="${esc(e.name)}">${esc(e.name)}</button>`
+            ).join('') +
+            (n > shown.length ? `<div class="lg-more">+ ${n - shown.length} more — zoom in to list</div>` : '');
+          return `<div class="lg-item${openKeys.has(it.key) ? ' open' : ''}" data-key="${it.key}">
+              <div class="lg-row lg-clickable" data-toggle="${it.key}">
+                ${it.swatch()}<span class="lg-label">${it.label}</span>
+                ${it.showCount === false ? '' : `<span class="lg-count">${n}</span>`}
+                <span class="lg-caret">&#9654;</span>
+              </div>
+              <div class="lg-sub">${sub}</div>
+            </div>`;
+        });
+      return rows.length ? { title: g.title, html: rows.join('') } : null;
+    }).filter(Boolean);
+
+    // Schools first when any are in view; otherwise natural order.
+    blocks.sort((a, b) => (b.title === 'Schools') - (a.title === 'Schools'));
+
+    el.innerHTML = blocks.length
+      ? blocks.map(b => `<h5>${b.title}</h5>${b.html}`).join('')
+      : '<div class="lg-empty">Zoom in to see map features</div>';
+  }
+
+  // --- interaction ---------------------------------------------------------
+  // Delegated so it survives the innerHTML rebuilds on every map move.
+  legendControl._div.addEventListener('click', ev => {
+    ev.stopPropagation();
+    const toggle = ev.target.closest('[data-toggle]');
+    if (toggle) {
+      const key = toggle.getAttribute('data-toggle');
+      const item = toggle.parentElement;
+      if (openKeys.has(key)) { openKeys.delete(key); item.classList.remove('open'); }
+      else { openKeys.add(key); item.classList.add('open'); }
+      return;
+    }
+    const hit = ev.target.closest('.lg-hit');
+    if (!hit) return;
+    const list = entries[hit.getAttribute('data-key')];
+    const entry = list && list[Number(hit.getAttribute('data-i'))];
+    if (entry) zoomToEntry(entry);
+  });
+
+  // Zoom/pan to a feature, flash a ring on it, then trigger the normal map
+  // click handler at that spot so its popup opens.
+  let flashMarker = null;
+  function zoomToEntry(entry) {
+    const isPolygon = !!entry.bounds && !entry.bounds.getNorthEast().equals(entry.bounds.getSouthWest());
+
+    let done = false;
+    const afterMove = () => {
+      if (done) return;
+      done = true;
+      map.off('moveend', onMove);
+      if (flashMarker) map.removeLayer(flashMarker);
+      flashMarker = L.circleMarker(entry.latlng, {
+        radius: 16, color: '#00619b', weight: 3, opacity: 1,
+        fillColor: '#00619b', fillOpacity: .12, interactive: false, className: 'lg-flash'
+      }).addTo(map);
+      setTimeout(() => { if (flashMarker) { map.removeLayer(flashMarker); flashMarker = null; } }, 1600);
+      map.fire('click', { latlng: entry.latlng });   // reuse the existing popup logic
+    };
+
+    const onMove = () => setTimeout(afterMove, 250);   // let the layers refresh first
+    map.on('moveend', onMove);
+
+    if (isPolygon) map.fitBounds(entry.bounds, { padding: [30, 30] });
+    else map.setView(entry.latlng, Math.max(map.getZoom(), ZOOM_TO_POINT));
+
+    // setView/fitBounds are no-ops when the view is already there, so no
+    // moveend would ever fire — this backstop makes sure the popup still opens.
+    setTimeout(afterMove, 900);
+  }
+
+  // --- refresh triggers ----------------------------------------------------
+  let pending = null;
+  const scheduleLegend = () => {
+    clearTimeout(pending);
+    pending = setTimeout(renderLegend, 200);   // debounce: layers fire 'load' in bursts
+  };
+
+  map.on('moveend zoomend layeradd layerremove', scheduleLegend);
+  [schools, footprints, healthCareUnits, statePolicePosts, localLawEnforcement,
+   schoolDistricts, intermediateDistricts].forEach(l => l.on('load', scheduleLegend));
+
+  renderLegend();
+})();
+
+// ============================================================================
+// SEARCH WIDGET — text search across every dataset on this map (schools,
+// health care units, state police posts, local law enforcement, PSAP
+// boundaries, EMHSD zones, state police zones, and school/intermediate
+// districts), with zoom-to and popup-open on selection. Reuses the popup
+// builders and the tolerant pick() field lookup already established above, so
+// it stays resilient to the same field-name inconsistencies across services.
+//
+// Villages, Minor Civil Divisions, and County boundaries are left out of
+// search here (unlike the statewide map) because those three services are
+// still the statewide feature layers on this map — searching them could zoom
+// to a same-named village or township outside Washtenaw County entirely.
+// ============================================================================
+(function initSearch() {
+
+  const MIN_CHARS = 2;
+  const DEBOUNCE_MS = 350;
+  const PER_LAYER_LIMIT = 8;
+
+  // --- swatch helpers (mirror the legend's, kept local to this IIFE) -------
+  const dot   = c => `<i class="lg-sw" style="background:${c};border-radius:50%;border:1px solid #004561"></i>`;
+  const fill  = c => `<i class="lg-sw" style="background:${c};border:1px solid #000"></i>`;
+  const line  = c => `<i class="lg-sw" style="border-top:2px solid ${c};height:0"></i>`;
+  const pin   = (c, g) => `<i class="lg-sw lg-pin" style="background:${c}">${g}</i>`;
+  const badge = (c, g) => `<i class="lg-sw lg-badge" style="background:${c}">${g}</i>`;
+
+  // Server-side name search, tolerant of the field-name inconsistency
+  // documented at the top of this file: try every candidate field in one
+  // OR'd clause, and if the service rejects it (a field it doesn't
+  // recognise causes the whole query to error), fall back to querying each
+  // candidate field alone and merge whatever succeeds — the same fallback
+  // shape as queryNearest() above.
+  const runWhere = (lyr, where) => new Promise(resolve => {
+    try {
+      lyr.query().where(where).limit(PER_LAYER_LIMIT).returnGeometry(true)
+        .run((err, fc) => resolve(err ? null : (fc && fc.features) || []));
+    } catch (e) { resolve(null); }
+  });
+
+  function nameClause(fields, term) {
+    const t = term.replace(/'/g, "''").toUpperCase();
+    return fields.map(f => `UPPER(${f}) LIKE '%${t}%'`).join(' OR ');
+  }
+
+  function searchOneLayer(lyr, fields, term) {
+    return runWhere(lyr, nameClause(fields, term)).then(res => {
+      if (res !== null) return res;
+      return Promise.all(fields.map(f => runWhere(lyr, nameClause([f], term))))
+        .then(lists => lists.filter(Boolean).reduce((a, b) => a.concat(b), []));
+    });
+  }
+
+  // --- guaranteed-interior anchor point for polygon search results ---------
+  // Bounding-box centres can fall outside very concave/irregular shapes
+  // (a bent district line, a notch cut into a zone, etc.), which would make
+  // the search popup land off the feature entirely. These helpers find a
+  // point that's actually inside the shape: first the area centroid, then
+  // (if that centroid itself isn't inside, e.g. a C-shaped boundary) the
+  // widest interior scanline.
+  const ringArea = ring => {
+    let a = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const [x1, y1] = ring[i], [x2, y2] = ring[(i + 1) % ring.length];
+      a += x1 * y2 - x2 * y1;
+    }
+    return a / 2;
+  };
+
+  const pointInRing = (pt, ring) => {
+    const [px, py] = pt;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      const hit = ((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+      if (hit) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Polygon -> [{outer, holes}]; MultiPolygon -> one entry per part.
+  const extractParts = g => g.type === 'Polygon'
+    ? [{ outer: g.coordinates[0], holes: g.coordinates.slice(1) }]
+    : g.type === 'MultiPolygon'
+      ? g.coordinates.map(c => ({ outer: c[0], holes: c.slice(1) }))
+      : [];
+
+  function pointOnSurface(geometry) {
+    const parts = extractParts(geometry);
+    if (!parts.length) return null;
+
+    // Work with the largest part (by area) for MultiPolygon features.
+    let part = parts[0], bestArea = Math.abs(ringArea(parts[0].outer));
+    for (let i = 1; i < parts.length; i++) {
+      const a = Math.abs(ringArea(parts[i].outer));
+      if (a > bestArea) { bestArea = a; part = parts[i]; }
+    }
+    const { outer, holes } = part;
+    const inside = pt => pointInRing(pt, outer) && !holes.some(h => pointInRing(pt, h));
+
+    // 1) area centroid of the outer ring — correct and cheapest for the
+    // convex/near-convex shapes that make up most of these datasets.
+    let cx = 0, cy = 0, a2 = 0;
+    for (let i = 0; i < outer.length; i++) {
+      const [x1, y1] = outer[i], [x2, y2] = outer[(i + 1) % outer.length];
+      const cross = x1 * y2 - x2 * y1;
+      a2 += cross; cx += (x1 + x2) * cross; cy += (y1 + y2) * cross;
+    }
+    if (a2 !== 0) {
+      cx /= (3 * a2); cy /= (3 * a2);
+      if (inside([cx, cy])) return L.latLng(cy, cx);
+    }
+
+    // 2) fall back to the midpoint of the widest interior scanline —
+    // guaranteed to be inside for a concave shape where the centroid isn't.
+    let minY = Infinity, maxY = -Infinity;
+    for (const [, y] of outer) { if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    const STEPS = 40;
+    let best = null, bestLen = -1;
+    for (let s = 1; s < STEPS; s++) {
+      const y = minY + (maxY - minY) * (s / STEPS);
+      const xs = [];
+      const collect = ring => {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [x1, y1] = ring[j], [x2, y2] = ring[i];
+          if ((y1 > y) !== (y2 > y)) xs.push(x1 + (y - y1) * (x2 - x1) / (y2 - y1));
+        }
+      };
+      collect(outer);
+      holes.forEach(collect);
+      xs.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        const len = xs[i + 1] - xs[i];
+        if (len > bestLen) { bestLen = len; best = [(xs[i] + xs[i + 1]) / 2, y]; }
+      }
+    }
+    if (best) return L.latLng(best[1], best[0]);
+
+    // 3) last resort — a vertex is always on the boundary of the feature.
+    return L.latLng(outer[0][1], outer[0][0]);
+  }
+
+  // GeoJSON feature -> { latlng, bounds }. Points use their coordinate
+  // directly; polygons are anchored to a guaranteed-interior point (see
+  // pointOnSurface above) so the popup always lands on the selected shape,
+  // while `bounds` (the full extent) is kept separately for the zoom/fit.
+  function featureGeom(feature) {
+    const g = feature && feature.geometry;
+    if (!g) return null;
+    if (g.type === 'Point') {
+      const [lng, lat] = g.coordinates;
+      return { latlng: L.latLng(lat, lng), bounds: null };
+    }
+    try {
+      const b = L.geoJSON(feature).getBounds();
+      if (!b.isValid()) return null;
+      const anchor = pointOnSurface(g);
+      return { latlng: anchor || b.getCenter(), bounds: b };
+    } catch (e) { return null; }
+  }
+
+  // Address/city line shown as a subtitle under a search result's name.
+  // Same fields the popups already use for these datasets (street + city).
+  function cityAddressOf(p) {
+    const addr = properCase(pick(p, 'StreetAddr', 'ADDRESS', 'Address', 'STREET', 'Street') || '');
+    const city = properCase(pick(p, 'CITY', 'City') || '');
+    return [addr, city].filter(Boolean).join(', ');
+  }
+
+  // One entry per searchable dataset. `layers` (plural) lets Schools combine
+  // its point and footprint services into a single result group.
+  // `dedupeKey(props, geom)` can override duplicate detection within a group.
+  const SEARCH_LAYERS = [
+    { key: 'health', label: 'Health Care Units', layers: [healthCareUnits],
+      fields: ['NAME', 'Name', 'FACILITY', 'Facility', 'FACILITY_N'],
+      nameOf: p => properCase(pick(p, 'NAME', 'Name', 'FACILITY', 'Facility', 'FACILITY_N') || 'Health Care Unit'),
+      detailOf: cityAddressOf,
+      swatch: p => pin(getHealthColor(p), HEALTH_GLYPH),
+      popup: (latlng, props, popup) => buildHealthPopup(latlng, props, popup) },
+
+    { key: 'sppost', label: 'Michigan State Police Posts', layers: [statePolicePosts],
+      fields: ['NAME', 'Name', 'POST', 'POST_NAME'],
+      nameOf: p => pick(p, 'NAME', 'Name', 'POST', 'POST_NAME') || 'State Police Post',
+      detailOf: cityAddressOf,
+      swatch: () => badge('#1b3a6b', SP_POST_GLYPH),
+      popup: (latlng, props, popup) => buildStatePolicePostPopup(latlng, props, popup) },
+
+    { key: 'le', label: 'Local Law Enforcement', layers: [localLawEnforcement],
+      fields: ['NAME', 'Name', 'DEPARTMENT', 'Department'],
+      nameOf: p => pick(p, 'NAME', 'Name', 'DEPARTMENT', 'Department') || 'Local Law Enforcement',
+      detailOf: cityAddressOf,
+      swatch: () => badge('#8a6b12', LOCAL_LE_GLYPH),
+      popup: (latlng, props, popup) => buildLocalLawEnforcementPopup(latlng, props, popup) },
+
+    { key: 'school', label: 'Schools', layers: [schools, footprints],
+      fields: ['NAME', 'Name'],
+      nameOf: p => formatSchoolName(pick(p, 'NAME', 'Name')),
+      detailOf: cityAddressOf,
+      swatch: p => dot(getColor(p)),
+      // Both services carry every school and their geometries never coincide
+      // exactly (point vs polygon centroid), so the default coordinate key lets
+      // the same school through twice. Match on name + street + city instead,
+      // falling back to a coarse ~1 km cell when a record has no address.
+      dedupeKey: (p, geom) => {
+        const nm = formatSchoolName(pick(p, 'NAME', 'Name')).toLowerCase();
+        const street = String(pick(p, 'STREET', 'Street', 'StreetAddr', 'ADDRESS', 'Address') || '')
+          .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const city = String(pick(p, 'CITY', 'City') || '').toLowerCase().trim();
+        return street || city
+          ? `${nm}|${street}|${city}`
+          : `${nm}|${geom.latlng.lat.toFixed(2)},${geom.latlng.lng.toFixed(2)}`;
+      },
+      popup: (latlng, props, popup) => buildFootprintPopup(latlng, props, popup) },
+
+    { key: 'sd', label: 'School Districts', layers: [schoolDistricts],
+      fields: ['Name', 'NAME'],
+      nameOf: p => pick(p, 'Name', 'NAME') || 'School District',
+      swatch: () => line('rgba(0,0,0,.45)'),
+      popup: (latlng, props, popup) => buildDistrictPopup(latlng, popup) },
+
+    { key: 'isd', label: 'Intermediate School Districts', layers: [intermediateDistricts],
+      fields: ['NAME', 'Label', 'Name'],
+      nameOf: p => formatDistrictIU(pick(p, 'Label', 'NAME', 'Name') || 'Intermediate District'),
+      swatch: () => fill('rgba(120,160,200,.6)'),
+      popup: (latlng, props, popup) => setIfOpen(popup, card('Intermediate School District',
+        table([ row('Name', formatDistrictIU(pick(props, 'Label', 'NAME', 'Name') || '')) ]))) },
+
+    { key: 'psap', label: 'PSAP Boundaries', layers: [psapBoundaries],
+      fields: ['DISPNAME'],
+      nameOf: p => properCase(pick(p, 'DISPNAME') || 'PSAP Zone'),
+      swatch: () => fill('rgba(150,150,150,.5)'),
+      popup: (latlng, props, popup) => setIfOpen(popup, card('PSAP Boundary',
+        table([ row('Name', properCase(pick(props, 'DISPNAME') || '')) ]))) },
+
+    { key: 'emhsd', label: 'Emergency Management & Homeland Security', layers: [emshdZones],
+      fields: ['EMHSD'],
+      nameOf: p => 'EMHSD District #' + (pick(p, 'EMHSD') || '?'),
+      swatch: () => fill('rgba(150,150,150,.5)'),
+      popup: (latlng, props, popup) => setIfOpen(popup, card('EMHSD District',
+        table([ row('District #', pick(props, 'EMHSD') || '') ]))) },
+
+    { key: 'spzone', label: 'State Police Zones', layers: [statePoliceZones],
+      fields: ['POST_DISTRICT'],
+      nameOf: p => properCase(pick(p, 'POST_DISTRICT') || 'Zone'),
+      swatch: () => fill('rgba(150,150,150,.5)'),
+      popup: (latlng, props, popup) => setIfOpen(popup, card('State Police Zone',
+        table([ row('Troop / district', properCase(pick(props, 'POST_DISTRICT') || '')) ]))) }
+  ];
+
+  // --- run a search across every dataset, grouped + de-duplicated ----------
+  let gen = 0;
+  async function runSearch(term) {
+    const myGen = ++gen;
+    resultsEl.innerHTML = '<div class="ms-empty">Searching\u2026</div>';
+    resultsEl.classList.add('open');
+
+    const groups = await Promise.all(SEARCH_LAYERS.map(async cfg => {
+      let feats = [];
+      try {
+        const lists = await Promise.all(cfg.layers.map(lyr => searchOneLayer(lyr, cfg.fields, term)));
+        feats = lists.reduce((a, b) => a.concat(b), []);
+      } catch (e) { feats = []; }
+
+      const seen = new Set(), entries = [];
+      for (const f of feats) {
+        const geom = featureGeom(f);
+        if (!geom) continue;
+        const name = cfg.nameOf(f.properties) || 'Unnamed';
+        // Default key is name + rounded coordinate; a config can override it
+        // where that isn't enough (see Schools).
+        const key = cfg.dedupeKey
+          ? cfg.dedupeKey(f.properties, geom)
+          : name.toLowerCase() + '|' + geom.latlng.lat.toFixed(3) + ',' + geom.latlng.lng.toFixed(3);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({ name, properties: f.properties, latlng: geom.latlng, bounds: geom.bounds, cfg });
+        if (entries.length >= PER_LAYER_LIMIT) break;
+      }
+      return entries.length ? { label: cfg.label, entries } : null;
+    }));
+
+    if (myGen !== gen) return;   // a newer search superseded this one
+    renderResults(term, groups.filter(Boolean));
+  }
+
+  // currentEntriesTerm records which search term currentEntries actually
+  // reflects, so a fast Enter press can tell fresh results from stale ones
+  // left over from whatever was typed before (see the keydown handler below).
+  let currentEntries = [];
+  let currentEntriesTerm = '';
+  function renderResults(term, groups) {
+    currentEntriesTerm = term;
+    if (!term) {
+      resultsEl.innerHTML = '';
+      resultsEl.classList.remove('open');
+      currentEntries = [];
+      return;
+    }
+    if (!groups.length) {
+      resultsEl.innerHTML = `<div class="ms-empty">No matches for "${esc(term)}"</div>`;
+      resultsEl.classList.add('open');
+      currentEntries = [];
+      return;
+    }
+    currentEntries = [];
+    resultsEl.innerHTML = groups.map(g => {
+      const rows = g.entries.map(e => {
+        currentEntries.push(e);
+        const i = currentEntries.length - 1;
+        const detail = e.cfg.detailOf ? e.cfg.detailOf(e.properties) : '';
+        const detailHtml = detail ? `<span class="ms-detail">${esc(detail)}</span>` : '';
+        return `<button type="button" class="ms-row" data-i="${i}">${e.cfg.swatch(e.properties)}<span class="ms-text"><span class="ms-name">${esc(e.name)}</span>${detailHtml}</span></button>`;
+      }).join('');
+      return `<h6>${esc(g.label)}</h6>${rows}`;
+    }).join('');
+    resultsEl.classList.add('open');
+  }
+
+  // --- zoom to a result, then hand off to its popup builder -----------------
+  function goToResult(entry) {
+    // With `animate: false`, Leaflet resets the view synchronously before
+    // setView/fitBounds even returns, so the popup is always added to a view
+    // that has already fully settled — avoids the popup landing in a corner
+    // of the screen mid-zoom-transition.
+    if (entry.bounds) map.fitBounds(entry.bounds, { padding: [40, 40], animate: false });
+    else map.setView(entry.latlng, Math.max(map.getZoom(), 15), { animate: false });
+
+    openPopup(entry.latlng, entry.bounds ? { maxWidth: 380, maxHeight: 460 } : { maxWidth: 340 },
+      'Loading details', popup => entry.cfg.popup(entry.latlng, entry.properties, popup),
+      'Could not load details. Try again.');
+  }
+
+  // --- control shell --------------------------------------------------------
+  const searchControl = L.control({ position: 'topright' });
+  let inputEl, clearEl, resultsEl;
+  searchControl.onAdd = function () {
+    const div = L.DomUtil.create('div', 'map-search');
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    div.innerHTML = `
+      <div class="ms-box">
+        <input type="text" class="ms-input" placeholder="Search schools, districts, facilities\u2026" aria-label="Search map features" />
+        <button type="button" class="ms-clear" hidden aria-label="Clear search">&times;</button>
+      </div>
+      <div class="ms-results"></div>`;
+    inputEl = div.querySelector('.ms-input');
+    clearEl = div.querySelector('.ms-clear');
+    resultsEl = div.querySelector('.ms-results');
+
+    let debounceTimer = null;
+    inputEl.addEventListener('input', () => {
+      const term = inputEl.value.trim();
+      clearEl.hidden = !term;
+      clearTimeout(debounceTimer);
+      if (term.length < MIN_CHARS) { renderResults('', []); return; }
+      debounceTimer = setTimeout(() => runSearch(term), DEBOUNCE_MS);
+    });
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        inputEl.value = '';
+        clearEl.hidden = true;
+        renderResults('', []);
+        inputEl.blur();
+      } else if (e.key === 'Enter') {
+        const term = inputEl.value.trim();
+        if (!term) return;
+        clearTimeout(debounceTimer);
+        if (term === currentEntriesTerm) {
+          // currentEntries already reflects what's typed — safe to use directly.
+          if (currentEntries[0]) { goToResult(currentEntries[0]); renderResults('', []); }
+          inputEl.blur();
+        } else {
+          // The debounced search for this text hasn't landed yet (or the box
+          // was edited since the last render), so currentEntries[0] still
+          // belongs to an earlier term. Run the search for the current text
+          // immediately instead, and act on *its* top match.
+          runSearch(term).then(() => {
+            if (currentEntries[0]) { goToResult(currentEntries[0]); renderResults('', []); }
+          });
+          inputEl.blur();
+        }
+      }
+    });
+    clearEl.addEventListener('click', () => {
+      inputEl.value = '';
+      clearEl.hidden = true;
+      renderResults('', []);
+      inputEl.focus();
+    });
+    resultsEl.addEventListener('click', e => {
+      // Stop this here, before anything below can mutate the DOM — see the
+      // matching note in the statewide map: renderResults() clears
+      // resultsEl's innerHTML synchronously, which detaches the clicked
+      // button before Leaflet's disableClickPropagation gets a chance to
+      // walk up from it, letting the click leak through to the map.
+      e.stopPropagation();
+      const btn = e.target.closest('.ms-row');
+      if (!btn) return;
+      const entry = currentEntries[Number(btn.dataset.i)];
+      if (!entry) return;
+      inputEl.value = entry.name;
+      clearEl.hidden = false;
+      renderResults('', []);
+      goToResult(entry);
+    });
+    return div;
+  };
+  searchControl.addTo(map);
+
+})();
+
+// ============================================================================
+// DIRECTIONS WIDGET — Leaflet Routing Machine driven by OpenRouteService.
+// A small custom router calls the ORS Directions v2 GeoJSON endpoint and adapts
+// the response into LRM's route shape (no dependency on lrm-openrouteservice).
+// Typed addresses are resolved with ORS geocoding (same key); waypoints can
+// also be picked straight off the map.
+// ============================================================================
+
+// >>> PUT YOUR OPENROUTESERVICE API KEY HERE <<<
+const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImRhYWUzZDEzM2QyOTQyODlhNWQ4MmUzYTAyZTRhYWU0IiwiaCI6Im11cm11cjY0In0=';
+
+(function initDirections() {
+
+  const ORS = 'https://api.openrouteservice.org';
+  const PROFILES = [
+    ['driving-car', 'Drive'],
+    ['foot-walking', 'Walk'],
+    ['cycling-regular', 'Bike']
+  ];
+  // Geocoding clamped to a Michigan-ish envelope so "Lincoln Elementary"
+  // doesn't resolve to Nebraska. Kept statewide (not county-tight) so an
+  // address just outside Washtenaw can still be a valid start/end.
+  const MI_RECT = { min_lon: -90.6, min_lat: 41.5, max_lon: -82.0, max_lat: 48.4 };
+  const MAX_STOPS = 8;
+
+  const hasKey = () => String(ORS_API_KEY || '').trim().length > 0;
+
+  // --- formatting -----------------------------------------------------------
+  const fmtDist = m => m >= 160.9
+    ? (m / MI).toFixed(m / MI < 10 ? 2 : 1) + ' mi'
+    : Math.round(m * 3.28084) + ' ft';
+
+  const fmtTime = s => {
+    const mins = Math.round(s / 60);
+    return mins < 60 ? mins + ' min' : Math.floor(mins / 60) + ' hr ' + (mins % 60) + ' min';
+  };
+
+  const fmtLatLng = ll => ll.lat.toFixed(5) + ', ' + ll.lng.toFixed(5);
+
+  // "42.3, -83.05" typed into a field is used verbatim rather than geocoded.
+  const parseLatLng = text => {
+    const m = String(text || '').match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!m) return null;
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    return (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) ? L.latLng(lat, lng) : null;
+  };
+
+  // --- ORS router for Leaflet Routing Machine -------------------------------
+  // LRM calls route(waypoints, callback, context); callback(err, [route]).
+  const orsRouter = {
+    options: { profile: 'driving-car' },
+
+    route(waypoints, callback, context) {
+      if (!hasKey()) {
+        return callback.call(context, {
+          status: -1, message: 'No OpenRouteService API key set — add one to ORS_API_KEY.'
+        });
+      }
+      const coords = waypoints.map(w => [w.latLng.lng, w.latLng.lat]);
+
+      fetch(`${ORS}/v2/directions/${this.options.profile}/geojson`, {
+        method: 'POST',
+        headers: { Authorization: String(ORS_API_KEY).trim(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coordinates: coords, instructions: true, units: 'm' })
+      })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })).catch(() => ({ ok: false, j: null })))
+        .then(({ ok, j }) => {
+          if (!ok || !j || !j.features || !j.features.length) {
+            const e = j && j.error;
+            const msg = (e && (e.message || e)) || 'No route found between those points.';
+            return callback.call(context, { status: -1, message: String(msg) });
+          }
+          callback.call(context, null, [toRoute(j.features[0], waypoints)]);
+        })
+        .catch(err => callback.call(context, {
+          status: -1, message: err && err.message ? err.message : 'Routing request failed.'
+        }));
+    }
+  };
+
+  // ORS GeoJSON feature -> LRM route object.
+  function toRoute(feature, waypoints) {
+    const line = feature.geometry.coordinates.map(c => L.latLng(c[1], c[0]));
+    const props = feature.properties || {};
+    const instructions = [];
+
+    (props.segments || []).forEach(seg => (seg.steps || []).forEach(s => instructions.push({
+      distance: s.distance || 0,
+      time: s.duration || 0,
+      text: s.instruction || '',
+      index: (s.way_points && s.way_points[0]) || 0
+    })));
+
+    const idx = props.way_points && props.way_points.length
+      ? props.way_points
+      : [0, line.length - 1];
+
+    return {
+      name: '',
+      coordinates: line,
+      instructions,
+      summary: {
+        totalDistance: (props.summary && props.summary.distance) || 0,
+        totalTime: (props.summary && props.summary.duration) || 0
+      },
+      inputWaypoints: waypoints,
+      waypoints: idx.map(i => ({ latLng: line[Math.min(i, line.length - 1)] })),
+      waypointIndices: idx
+    };
+  }
+
+  // --- geocoding (ORS / Pelias) --------------------------------------------
+  function geocode(text) {
+    if (!hasKey()) return Promise.resolve(null);
+    const q = new URLSearchParams({
+      api_key: String(ORS_API_KEY).trim(),
+      text, size: '1',
+      'boundary.rect.min_lon': MI_RECT.min_lon,
+      'boundary.rect.min_lat': MI_RECT.min_lat,
+      'boundary.rect.max_lon': MI_RECT.max_lon,
+      'boundary.rect.max_lat': MI_RECT.max_lat
+    });
+    return fetch(`${ORS}/geocode/search?${q}`)
+      .then(r => r.json())
+      .then(j => {
+        const f = j && j.features && j.features[0];
+        if (!f || !f.geometry) return null;
+        return {
+          latlng: L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]),
+          label: (f.properties && (f.properties.label || f.properties.name)) || text
+        };
+      })
+      .catch(() => null);
+  }
+
+  // --- state ----------------------------------------------------------------
+  // stops[i] = { latlng, label }; latlng null until picked or geocoded.
+  let stops = [{ latlng: null, label: '' }, { latlng: null, label: '' }];
+  let pickIndex = null;         // which stop the next map click fills, if any
+  let profile = PROFILES[0][0];
+  let panelEl = null, statusEl = null, summaryEl = null, stepsEl = null, rowsEl = null;
+
+  const letter = i => String.fromCharCode(65 + i);
+
+  // --- routing control (line + draggable waypoint markers only; the itinerary
+  // renders into our own panel from routesfound, so LRM's panel stays hidden).
+  let routingControl = null;
+
+  // Built on first use, so a problem here can't stop the panel rendering.
+  function routing() {
+    if (routingControl) return routingControl;
+    if (!window.L || !L.Routing || !L.Routing.control) {
+      setStatus('Leaflet Routing Machine did not load — check the script tag.', true);
+      return null;
+    }
+    try {
+      routingControl = L.Routing.control({
+        router: orsRouter,
+        waypoints: [],
+        show: false,
+        addWaypoints: false,
+        routeWhileDragging: false,
+        fitSelectedRoutes: true,
+        lineOptions: {
+          addWaypoints: false,
+          styles: [
+            { color: '#fff', opacity: 0.9, weight: 9 },
+            { color: '#00619b', opacity: 0.95, weight: 5 }
+          ]
+        },
+        createMarker: (i, wp) => L.marker(wp.latLng, {
+          draggable: true,
+          icon: L.divIcon({
+            className: 'dw-wp-icon',
+            html: `<span class="dw-wp">${letter(i)}</span>`,
+            iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -12]
+          })
+        })
+      }).addTo(map);
+    } catch (err) {
+      setStatus('Routing control failed to initialise: ' + (err && err.message), true);
+      console.error(err);
+      return null;
+    }
+
+    routingControl.on('routesfound', e => {
+      const r = e.routes && e.routes[0];
+      if (!r) return;
+      setStatus('');
+      summaryEl.innerHTML =
+        `${esc(fmtDist(r.summary.totalDistance))} &middot; ${esc(fmtTime(r.summary.totalTime))}` +
+        `<span>${esc(PROFILES.find(p => p[0] === profile)[1])} route via OpenRouteService</span>`;
+      stepsEl.innerHTML = r.instructions.map(s =>
+        `<li>${esc(s.text)}<br><span class="dw-stepdist">${esc(fmtDist(s.distance))}</span></li>`
+      ).join('');
+    });
+
+    routingControl.on('routingerror', e => {
+      setStatus((e.error && e.error.message) || 'Could not calculate a route.', true);
+      summaryEl.innerHTML = '';
+      stepsEl.innerHTML = '';
+    });
+
+    routingControl.on('waypointschanged', e => {
+      (e.waypoints || []).forEach((w, i) => {
+        if (!w.latLng || !stops[i]) return;
+        if (stops[i].latlng && stops[i].latlng.equals(w.latLng)) return;
+        stops[i] = { latlng: w.latLng, label: fmtLatLng(w.latLng) };
+      });
+      renderRows();
+    });
+
+    return routingControl;
+  }
+
+  // --- map-click waypoint picking ------------------------------------------
+  // Called from the main map click handler before any popup logic runs;
+  // returning true means "this click was mine".
+  window.__dwPickClick = latlng => {
+    if (pickIndex === null) return false;
+    const i = pickIndex;
+    setPickMode(null);
+    stops[i] = { latlng, label: fmtLatLng(latlng) };
+    renderRows();
+    setStatus('');
+    if (stops.every(s => s.latlng)) route();
+    return true;
+  };
+
+  function setPickMode(i) {
+    pickIndex = i;
+    const c = map.getContainer();
+    if (i === null) L.DomUtil.removeClass(c, 'dw-picking');
+    else L.DomUtil.addClass(c, 'dw-picking');
+    if (rowsEl) rowsEl.querySelectorAll('.dw-pick').forEach(b => {
+      b.classList.toggle('active', Number(b.dataset.i) === i);
+    });
+    if (i !== null) setStatus('Click the map to set stop ' + letter(i) + '.');
+  }
+
+  function setStatus(msg, isError) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    statusEl.classList.toggle('dw-err', !!isError);
+  }
+
+  // --- routing --------------------------------------------------------------
+  function clearRoute() {
+    if (routingControl) routingControl.setWaypoints([]);
+    summaryEl.innerHTML = '';
+    stepsEl.innerHTML = '';
+  }
+
+  function route() {
+    if (stops.some(s => !s.latlng)) return setStatus('Set at least a start and an end point.', true);
+    if (!hasKey()) return setStatus('No OpenRouteService API key set — add one to ORS_API_KEY.', true);
+    const rc = routing();
+    if (!rc) return;
+    orsRouter.options.profile = profile;
+    setStatus('Finding route\u2026');
+    rc.setWaypoints(stops.map(s => s.latlng));
+  }
+
+  // Resolve any typed-but-unresolved fields, then route.
+  async function submit() {
+    setStatus('');
+    for (let i = 0; i < stops.length; i++) {
+      const input = rowsEl.querySelector(`.dw-input[data-i="${i}"]`);
+      const text = input ? input.value.trim() : '';
+      if (!text) { stops[i].latlng = null; continue; }
+      if (stops[i].latlng && stops[i].label === text) continue;
+
+      const coord = parseLatLng(text);
+      if (coord) { stops[i] = { latlng: coord, label: fmtLatLng(coord) }; continue; }
+
+      setStatus('Looking up "' + text + '"\u2026');
+      const hit = await geocode(text);
+      if (!hit) {
+        setStatus(hasKey()
+          ? 'Could not find "' + text + '". Try a fuller address, or use the pin button to click it on the map.'
+          : 'No OpenRouteService API key set — add one to ORS_API_KEY.', true);
+        return;
+      }
+      stops[i] = { latlng: hit.latlng, label: hit.label };
+    }
+    renderRows();
+    route();
+  }
+
+  // --- panel rendering ------------------------------------------------------
+  function renderRows() {
+    if (!rowsEl) return;
+    rowsEl.innerHTML = stops.map((s, i) => `
+      <div class="dw-row">
+        <span class="dw-letter">${letter(i)}</span>
+        <input type="text" class="dw-input" data-i="${i}"
+               placeholder="${i === 0 ? 'Start' : i === stops.length - 1 ? 'Destination' : 'Stop'} — address, place, or lat, lng"
+               value="${esc(s.label)}" />
+        <button type="button" class="dw-mini dw-pick" data-i="${i}" title="Pick on map">&#128205;</button>
+        ${stops.length > 2
+          ? `<button type="button" class="dw-mini dw-del" data-i="${i}" title="Remove stop">&times;</button>`
+          : ''}
+      </div>`).join('');
+    if (pickIndex !== null) setPickMode(pickIndex);
+  }
+
+  const control = L.control({ position: 'topleft' });
+  control.onAdd = function () {
+    const wrap = L.DomUtil.create('div', 'leaflet-bar-none');
+    L.DomEvent.disableClickPropagation(wrap);
+    L.DomEvent.disableScrollPropagation(wrap);
+    wrap.innerHTML = `
+      <button type="button" class="dw-launch">&#10142; Directions</button>
+      <div class="map-directions" hidden>
+        <div class="dw-head">
+          <span class="dw-title">Directions</span>
+          <button type="button" class="dw-x" aria-label="Close">&times;</button>
+        </div>
+        <div class="dw-rows"></div>
+        <button type="button" class="dw-add">+ Add stop</button>
+        <div class="dw-controls">
+          <select class="dw-profile">
+            ${PROFILES.map(p => `<option value="${p[0]}">${p[1]}</option>`).join('')}
+          </select>
+          <button type="button" class="dw-btn dw-go">Get directions</button>
+          <button type="button" class="dw-btn dw-ghost dw-clear">Clear</button>
+        </div>
+        <div class="dw-status"></div>
+        <div class="dw-summary"></div>
+        <ol class="dw-steps"></ol>
+      </div>`;
+
+    const launch = wrap.querySelector('.dw-launch');
+    panelEl = wrap.querySelector('.map-directions');
+    rowsEl = wrap.querySelector('.dw-rows');
+    statusEl = wrap.querySelector('.dw-status');
+    summaryEl = wrap.querySelector('.dw-summary');
+    stepsEl = wrap.querySelector('.dw-steps');
+
+    const open = on => {
+      panelEl.hidden = !on;
+      launch.hidden = on;
+      if (!on) setPickMode(null);
+    };
+
+    launch.addEventListener('click', () => open(true));
+    wrap.querySelector('.dw-x').addEventListener('click', () => open(false));
+
+    wrap.querySelector('.dw-add').addEventListener('click', () => {
+      if (stops.length >= MAX_STOPS) return setStatus('Maximum of ' + MAX_STOPS + ' stops.', true);
+      stops.push({ latlng: null, label: '' });
+      renderRows();
+    });
+
+    wrap.querySelector('.dw-profile').addEventListener('change', ev => {
+      profile = ev.target.value;
+      if (stops.every(s => s.latlng)) route();
+    });
+
+    wrap.querySelector('.dw-go').addEventListener('click', submit);
+
+    wrap.querySelector('.dw-clear').addEventListener('click', () => {
+      stops = [{ latlng: null, label: '' }, { latlng: null, label: '' }];
+      setPickMode(null);
+      renderRows();
+      clearRoute();
+      setStatus('');
+    });
+
+    // Delegated: the rows are rebuilt on every change.
+    rowsEl.addEventListener('click', ev => {
+      const pick = ev.target.closest('.dw-pick');
+      if (pick) {
+        const i = Number(pick.dataset.i);
+        setPickMode(pickIndex === i ? null : i);
+        if (pickIndex === null) setStatus('');
+        return;
+      }
+      const del = ev.target.closest('.dw-del');
+      if (del) {
+        stops.splice(Number(del.dataset.i), 1);
+        renderRows();
+        clearRoute();
+      }
+    });
+
+    // Typing invalidates a previously resolved point for that field.
+    rowsEl.addEventListener('input', ev => {
+      const input = ev.target.closest('.dw-input');
+      if (!input) return;
+      const s = stops[Number(input.dataset.i)];
+      if (s && s.label !== input.value.trim()) s.latlng = null;
+    });
+
+    rowsEl.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && ev.target.closest('.dw-input')) submit();
+    });
+
+    renderRows();
+    if (!hasKey()) setStatus('Add your OpenRouteService key to ORS_API_KEY to enable routing.');
+    return wrap;
+  };
+  control.addTo(map);
+
+})();
+
+</script>
