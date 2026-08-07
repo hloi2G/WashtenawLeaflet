@@ -1,3 +1,3 @@
 # WashtenawLeaflet
 
-## Index houses final code for internship Washtenaw schools Leaflet map
+## Index houses final code for Washtenaw schools Leaflet map (during internship)
